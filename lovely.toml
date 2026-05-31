@@ -5,6 +5,96 @@ priority = 0
 
 [[patches]]
 [patches.pattern]
+target = "conf.lua"
+pattern = '''function love.conf(t)'''
+position = "after"
+payload = '''
+	pcall(function()
+		local ffi = require("ffi")
+		ffi.cdef[[
+			int SDL_SetHint(const char *name, const char *value);
+			int SDL_SetHintWithPriority(const char *name, const char *value, int priority);
+			void *GetModuleHandleA(const char *lpModuleName);
+			void *GetProcAddress(void *hModule, const char *lpProcName);
+		]]
+		local function set_hint(lib)
+			local ok, ret = pcall(function()
+				return lib.SDL_SetHintWithPriority("SDL_IME_SHOW_UI", "1", 2)
+			end)
+			if ok and ret ~= 0 then return true end
+			ok, ret = pcall(function()
+				return lib.SDL_SetHint("SDL_IME_SHOW_UI", "1")
+			end)
+			return ok and ret ~= 0
+		end
+		if set_hint(ffi.C) then return end
+		if ffi.os == "Windows" then
+			local ok, kernel32 = pcall(ffi.load, "kernel32")
+			if ok and kernel32 then
+				local module = kernel32.GetModuleHandleA("SDL2.dll")
+				if module ~= nil and tonumber(ffi.cast("uintptr_t", module)) ~= 0 then
+					local proc = kernel32.GetProcAddress(module, "SDL_SetHintWithPriority")
+					if proc ~= nil and tonumber(ffi.cast("uintptr_t", proc)) ~= 0 then
+						local fn = ffi.cast("int (__cdecl *)(const char *, const char *, int)", proc)
+						if fn("SDL_IME_SHOW_UI", "1", 2) ~= 0 then return end
+					end
+					proc = kernel32.GetProcAddress(module, "SDL_SetHint")
+					if proc ~= nil and tonumber(ffi.cast("uintptr_t", proc)) ~= 0 then
+						local fn = ffi.cast("int (__cdecl *)(const char *, const char *)", proc)
+						fn("SDL_IME_SHOW_UI", "1")
+					end
+				end
+			end
+		end
+		for _, name in ipairs({ "SDL2", "SDL2.dll" }) do
+			local ok, lib = pcall(ffi.load, name)
+			if ok and set_hint(lib) then return end
+		end
+	end)
+'''
+match_indent = true
+overwrite = false
+
+[[patches]]
+[patches.pattern]
+target = "game.lua"
+pattern = '''    self:init_window()'''
+position = "before"
+payload = '''
+    pcall(function()
+        local ffi = require("ffi")
+        ffi.cdef[[
+            int SDL_SetHint(const char *name, const char *value);
+            int SDL_SetHintWithPriority(const char *name, const char *value, int priority);
+        ]]
+        local ok, ret = pcall(function()
+            return ffi.C.SDL_SetHintWithPriority("SDL_IME_SHOW_UI", "1", 2)
+        end)
+        if ok and ret ~= 0 then return end
+        ok, ret = pcall(function()
+            return ffi.C.SDL_SetHint("SDL_IME_SHOW_UI", "1")
+        end)
+        if ok and ret ~= 0 then return end
+        for _, name in ipairs({ "SDL2", "SDL2.dll" }) do
+            local loaded, lib = pcall(ffi.load, name)
+            if loaded then
+                ok, ret = pcall(function()
+                    return lib.SDL_SetHintWithPriority("SDL_IME_SHOW_UI", "1", 2)
+                end)
+                if ok and ret ~= 0 then return end
+                ok, ret = pcall(function()
+                    return lib.SDL_SetHint("SDL_IME_SHOW_UI", "1")
+                end)
+                if ok and ret ~= 0 then return end
+            end
+        end
+    end)
+'''
+match_indent = true
+overwrite = false
+
+[[patches]]
+[patches.pattern]
 target = "engine/controller.lua"
 pattern = "if  G.OVERLAY_MENU then"
 position = "at"

@@ -59,6 +59,8 @@ end
 
 
 G.FUNCS.CloseTMJ = function()
+    if TMJ.FUNCS.clear_search_input then TMJ.FUNCS.clear_search_input(false) end
+    if TMJ.FUNCS.stop_search_text_input then TMJ.FUNCS.stop_search_text_input() end
     G.TMJUI:remove()
     G.TMJTAGS:remove()
     G.TMJUI = nil
@@ -109,12 +111,17 @@ local old = love.keypressed
 local wanted_chars = table_into_hashset(collect(string.gmatch("abcdefghijklmnopqrstuvwxyz[]!", ".")))
 wanted_chars["return"] = true
 local unwanted_chars = collect(string.gmatch("lctrl rctrl lalt ralt", "(.-) "))
-function love.keypressed(key)
+local function tmj_ctrl_down()
+    return (G.CONTROLLER and G.CONTROLLER.held_keys and (G.CONTROLLER.held_keys.lctrl or G.CONTROLLER.held_keys.rctrl))
+        or (love and love.keyboard and love.keyboard.isDown and (love.keyboard.isDown("lctrl") or love.keyboard.isDown("rctrl")))
+end
+
+function love.keypressed(key, ...)
     if key == "escape" and G.TMJUI and TMJ.config.close_on_esc then
         G.FUNCS.CloseTMJ()
         return
     end
-    if key == "t" and not G.CONTROLLER.text_input_hook and not is_debugplus_console_open() then
+    if key == "t" and not G.CONTROLLER.text_input_hook and not (TMJ.FUNCS.is_search_input_active and TMJ.FUNCS.is_search_input_active()) and not is_debugplus_console_open() then
         if G.TMJUI then
             if not TMJ.config.close_on_esc then
                 G.FUNCS.CloseTMJ()
@@ -122,10 +129,13 @@ function love.keypressed(key)
             end
         else
             TMJ.FUNCS.reload()
+            if TMJ.config.autofocus and TMJ.FUNCS.focus_search_input then
+                TMJ.FUNCS.focus_search_input()
+            end
             return
         end
     end
-    if TMJ.config.arrow_key_scroll and G.TMJUI then
+    if TMJ.config.arrow_key_scroll and G.TMJUI and not (TMJ.FUNCS.is_search_input_active and TMJ.FUNCS.is_search_input_active()) then
         local mul = ((G.CONTROLLER.held_keys.lctrl or G.CONTROLLER.held_keys.rctrl or TMJ.config.scroll_full_page) and TMJ.config.rows) or 1
         if key == "up" then
             TMJ.held_arrow = key 
@@ -139,11 +149,8 @@ function love.keypressed(key)
             TMJ.FUNCS.scroll(1 * mul)
         end
     end
-    if not TMJ.config.disable_cheats and key == "return" and G.CONTROLLER.held_keys.lctrl and G.TMJUI and G.CONTROLLER.text_input_hook and G.TMJUI:get_UIE_by_ID("TMJTEXTINP") and G.TMJUI:get_UIE_by_ID("TMJTEXTINP").children[1].children[1].children[1] == G.CONTROLLER.text_input_hook then
-        TMJ.thegreatfilter = G.ENTERED_FILTER
-        G.ENTERED_FILTER = ""
-        TMJ.scrolled_amount = 0
-        TMJ.FUNCS.reload()
+    if not TMJ.config.disable_cheats and key == "return" and tmj_ctrl_down() and G.TMJUI and TMJ.FUNCS.is_search_input_active and TMJ.FUNCS.is_search_input_active() then
+        TMJ.FUNCS.apply_search_input()
         local first_card = G.TMJCOLLECTION[1].cards[1]
         if first_card then
             local _area
@@ -170,15 +177,35 @@ function love.keypressed(key)
         G.FUNCS.CloseTMJ()
         return
     end
+    if TMJ.FUNCS.handle_search_keypressed and TMJ.FUNCS.handle_search_keypressed(key) then
+        return
+    end
     for _, char in pairs(unwanted_chars) do
         if G.CONTROLLER.held_keys[char] then
-            return old(key)
+            return old(key, ...)
         end
     end
-    if G.TMJUI and wanted_chars[key] and G.TMJUI:get_UIE_by_ID("TMJTEXTINP") and TMJ.config.autofocus then
-        G.FUNCS.select_text_input(G.TMJUI:get_UIE_by_ID("TMJTEXTINP").children[1])
+    if G.TMJUI and wanted_chars[key] and TMJ.config.autofocus and TMJ.FUNCS.focus_search_input then
+        TMJ.FUNCS.focus_search_input()
+        return
     end
-    old(key)
+    old(key, ...)
+end
+
+local old_textinput = love.textinput or function() end
+function love.textinput(text)
+    if TMJ.FUNCS.handle_search_textinput and TMJ.FUNCS.handle_search_textinput(text) then
+        return
+    end
+    return old_textinput(text)
+end
+
+local old_textedited = love.textedited or function() end
+function love.textedited(text, start, length)
+    if TMJ.FUNCS.handle_search_textedited and TMJ.FUNCS.handle_search_textedited(text, start, length) then
+        return
+    end
+    return old_textedited(text, start, length)
 end
 
 local oldrelease = love.keyreleased
@@ -213,14 +240,7 @@ SMODS.Sticker {
     needs_enable_flag = true,
     should_apply = false, --i REALLY dont want this affecting normal gameplay
     no_collection = true,
-    loc_txt = {
-        name = "Pinned",
-        text = {
-            "Ctrl+click to unpin"
-        }
-    },
 }
-G.localization.misc.labels.tmj_pinned = "Pinned"
 
 local oldcc = copy_card
 function copy_card(card, ...)
@@ -238,8 +258,7 @@ create_UIBox_generic_options = function(arg1, ...) --inserts the text into most 
             n = G.UIT.R,
             config = { align = "cm", minh = 0.5 },
             nodes = {
-
-                { n = G.UIT.C, config = { align = "cm", minw = 5 }, nodes = { { n = G.UIT.T, config = { text = "Press T to access Too Many Jokers", colour = G.C.WHITE, shadow = true, scale = 0.3 } } } }
+                { n = G.UIT.C, config = { align = "cm", minw = 5 }, nodes = { { n = G.UIT.T, config = { text = localize("tmj_collection_hint"), colour = G.C.WHITE, shadow = true, scale = 0.3 } } } }
 
             }
         })

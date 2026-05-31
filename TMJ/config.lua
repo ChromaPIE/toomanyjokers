@@ -31,7 +31,7 @@ TMJ.config_tab = function()
                                 ref_table = TMJ.fake_config,
                                 ref_value = "rows"
                             }),
-                            { n = G.UIT.T, config = { text = "Number of rows", align = "cr", colour = G.C.WHITE, scale = 0.35 } },
+                            { n = G.UIT.T, config = { text = localize("tmj_config_rows"), align = "cr", colour = G.C.WHITE, scale = 0.35 } },
                         }
                     }
                 }
@@ -57,7 +57,7 @@ TMJ.config_tab = function()
                                 ref_table = TMJ.fake_config,
                                 ref_value = "columns"
                             }),
-                            { n = G.UIT.T, config = { align = "cr", text = "Number of columns", colour = G.C.WHITE, scale = 0.35 } },
+                            { n = G.UIT.T, config = { align = "cr", text = localize("tmj_config_columns"), colour = G.C.WHITE, scale = 0.35 } },
 
                         }
                     }
@@ -84,7 +84,7 @@ TMJ.config_tab = function()
                                 ref_table = TMJ.fake_config,
                                 ref_value = "size"
                             }),
-                            { n = G.UIT.T, config = { align = "cr", text = "Card size", colour = G.C.WHITE, scale = 0.35 } },
+                            { n = G.UIT.T, config = { align = "cr", text = localize("tmj_config_size"), colour = G.C.WHITE, scale = 0.35 } },
 
                         }
                     }
@@ -111,7 +111,7 @@ TMJ.config_tab = function()
                                 ref_table = TMJ.fake_config,
                                 ref_value = "sensitivity"
                             }),
-                            { n = G.UIT.T, config = { align = "cr", text = "Scroll sensitivity", colour = G.C.WHITE, scale = 0.35 } },
+                            { n = G.UIT.T, config = { align = "cr", text = localize("tmj_config_sensitivity"), colour = G.C.WHITE, scale = 0.35 } },
                         }
                     }
                 }
@@ -125,7 +125,7 @@ TMJ.config_tab = function()
                         config = { align = "cl", padding = 0.1 },
                         nodes = {
                             create_toggle {
-                                label = "Hide undiscovered/disabled cards",
+                                label = localize("tmj_config_hide_undiscovered"),
                                 ref_table = TMJ.config,
                                 ref_value = "hide_undiscovered"
                             },
@@ -142,7 +142,7 @@ TMJ.config_tab = function()
                         config = { align = "cl", padding = 0.1 },
                         nodes = {
                             create_toggle {
-                                label = "Close TMJ when 'esc' is pressed",
+                                label = localize("tmj_config_close_on_esc"),
                                 ref_table = TMJ.config,
                                 ref_value = "close_on_esc"
                             },
@@ -159,7 +159,7 @@ TMJ.config_tab = function()
                         config = { align = "cl", padding = 0.1 },
                         nodes = {
                             create_toggle {
-                                label = "Scroll TMJ by a full page at a time",
+                                label = localize("tmj_config_scroll_full_page"),
                                 ref_table = TMJ.config,
                                 ref_value = "scroll_full_page"
                             },
@@ -176,7 +176,7 @@ TMJ.config_tab = function()
                         config = { align = "cl", padding = 0.1 },
                         nodes = {
                             create_toggle {
-                                label = "Scroll TMJ using arrow keys",
+                                label = localize("tmj_config_arrow_key_scroll"),
                                 ref_table = TMJ.config,
                                 ref_value = "arrow_key_scroll"
                             },
@@ -193,7 +193,7 @@ TMJ.config_tab = function()
                         config = { align = "cl", padding = 0.1 },
                         nodes = {
                             create_toggle {
-                                label = "Autofocus TMJ textbox on type",
+                                label = localize("tmj_config_autofocus"),
                                 ref_table = TMJ.config,
                                 ref_value = "autofocus"
                             },
@@ -210,7 +210,7 @@ TMJ.config_tab = function()
                         config = { align = "cl", padding = 0.1 },
                         nodes = {
                             create_toggle {
-                                label = "Show mod tags for mods w/ no centers",
+                                label = localize("tmj_config_show_all_tags"),
                                 ref_table = TMJ.config,
                                 ref_value = "show_all_tags",
                                 callback = function()
@@ -230,7 +230,7 @@ TMJ.config_tab = function()
                         config = { align = "cl", padding = 0.1 },
                         nodes = {
                             create_toggle {
-                                label = "Hide cards that are hidden in collection",
+                                label = localize("tmj_config_hide_no_collection"),
                                 ref_table = TMJ.config,
                                 ref_value = "hide_no_collection",
                                 callback = function()
@@ -258,7 +258,7 @@ TMJ.FUNCS.CHEAT_TOGGLE = function()
                     config = { align = "cl", padding = 0.1 },
                     nodes = {
                         create_toggle {
-                            label = "Disable cheats",
+                            label = localize("tmj_config_disable_cheats"),
                             ref_table = TMJ.config,
                             ref_value = "disable_cheats"
                         },

@@ -10,33 +10,244 @@ end
 
 G.ENTERED_FILTER = ""
 TMJ.thegreatfilter = ""
-function TMJ.FUNCS.inner_nodes()
-    local text = create_text_input({
-        colour = G.C.RED,
-        hooked_colour = darken(copy_table(G.C.RED), 0.3),
-        w = 3,
-        h = 1,
-        max_length = 100,
-        extended_corpus = true,
-        prompt_text = "",
-        ref_table = G,
-        ref_value = "ENTERED_FILTER",
-        keyboard_offset = 1,
-        config = { align = "cm", id = "TMJTEXTINP" },
-        callback = function()
-            TMJ.thegreatfilter = G.ENTERED_FILTER
-            G.ENTERED_FILTER = ""
-            TMJ.scrolled_amount = 0
-            TMJ.FUNCS.reload()
+
+local function tmj_search_display_text(input)
+    local chars = tmj_utf8_chars(input.text or "")
+    local cursor = math.clamp(input.cursor or #chars, 0, #chars)
+    local max_visible = 28
+    local start = math.max(1, cursor - max_visible + 2)
+    if #chars - start + 1 < max_visible then
+        start = math.max(1, #chars - max_visible + 1)
+    end
+    local finish = math.min(#chars, start + max_visible - 1)
+    local out = {}
+    if start > 1 then out[#out + 1] = "..." end
+    for i = start, finish do
+        if input.active and cursor == i - 1 then out[#out + 1] = "|" end
+        out[#out + 1] = chars[i]
+    end
+    if input.active and cursor >= finish then out[#out + 1] = "|" end
+    if finish < #chars then out[#out + 1] = "..." end
+    if input.active and input.composition and input.composition ~= "" then
+        out[#out + 1] = "[" .. input.composition .. "]"
+    end
+    local text = table.concat(out)
+    if text == "" and input.active then text = "|" end
+    return text
+end
+
+function TMJ.FUNCS.ensure_search_input()
+    TMJ.search_input = TMJ.search_input or tmj_create_unicode_input(G.ENTERED_FILTER or "", 100)
+    TMJ.search_input.max_length = 100
+    TMJ.FUNCS.refresh_search_input_display()
+    return TMJ.search_input
+end
+
+function TMJ.FUNCS.refresh_search_input_display(recalculate)
+    if not TMJ.search_input then return end
+    TMJ.search_input.display_text = tmj_search_display_text(TMJ.search_input)
+    G.ENTERED_FILTER = TMJ.search_input.text or ""
+    if recalculate and G.TMJUI then
+        G.TMJUI:recalculate(true)
+    end
+end
+
+function TMJ.FUNCS.start_search_text_input()
+    if love and love.keyboard and love.keyboard.setTextInput then
+        if not TMJ.search_text_input_started then
+            TMJ.prev_love_text_input = love.keyboard.hasTextInput and love.keyboard.hasTextInput() or false
         end
-    })
-    text.config.id = "TMJTEXTINP"
+        local native_ime_enabled = tmj_enable_native_ime_ui()
+        if native_ime_enabled and not TMJ.native_ime_ui_text_input_restarted and love.keyboard.hasTextInput and love.keyboard.hasTextInput() then
+            love.keyboard.setTextInput(false)
+            TMJ.native_ime_ui_text_input_restarted = true
+        end
+        local node = G.TMJUI and G.TMJUI.get_UIE_by_ID and G.TMJUI:get_UIE_by_ID("TMJTEXTINP")
+        local x, y, w, h = tmj_text_input_rect_from_node(node, G.ROOM, G.TILESIZE, G.TILESCALE)
+        local window_w, window_h
+        if love.graphics and love.graphics.getDimensions then
+            window_w, window_h = love.graphics.getDimensions()
+        elseif love.graphics and love.graphics.getWidth and love.graphics.getHeight then
+            window_w, window_h = love.graphics.getWidth(), love.graphics.getHeight()
+        end
+        x, y, w, h = tmj_clamp_text_input_rect(x, y, w or 360, h or 40, window_w, window_h)
+        love.keyboard.setTextInput(true, x, y, w, h)
+        TMJ.search_text_input_started = true
+        tmj_set_native_ime_rect(x, y, w, h)
+    end
+end
+
+function TMJ.FUNCS.stop_search_text_input()
+    if love and love.keyboard and love.keyboard.setTextInput and TMJ.search_text_input_started then
+        love.keyboard.setTextInput(TMJ.prev_love_text_input or false)
+    end
+    TMJ.prev_love_text_input = nil
+    TMJ.search_text_input_started = false
+    if TMJ.search_input then
+        TMJ.search_input.active = false
+        TMJ.search_input.composition = ""
+        TMJ.FUNCS.refresh_search_input_display()
+    end
+end
+
+function TMJ.FUNCS.focus_search_input()
+    local input = TMJ.FUNCS.ensure_search_input()
+    input.active = true
+    input.composition = ""
+    TMJ.FUNCS.refresh_search_input_display(true)
+    TMJ.FUNCS.start_search_text_input()
+end
+
+function TMJ.FUNCS.blur_search_input()
+    if not TMJ.search_input then return end
+    TMJ.FUNCS.stop_search_text_input()
+    TMJ.FUNCS.refresh_search_input_display(true)
+end
+
+function TMJ.FUNCS.is_search_input_active()
+    return G.TMJUI and TMJ.search_input and TMJ.search_input.active
+end
+
+function TMJ.FUNCS.clear_search_input(recalculate)
+    local input = TMJ.FUNCS.ensure_search_input()
+    tmj_unicode_input_set(input, "")
+    input.cursor = 0
+    input.composition = ""
+    TMJ.FUNCS.refresh_search_input_display(recalculate)
+end
+
+function TMJ.FUNCS.update_live_search(force_reload)
+    local input = TMJ.FUNCS.ensure_search_input()
+    local changed = tmj_set_live_search_filter(TMJ, input.text or "")
+    if G.TMJUI and (changed or force_reload) then
+        TMJ.FUNCS.reload()
+    end
+    return changed
+end
+
+function TMJ.FUNCS.apply_search_input()
+    local input = TMJ.FUNCS.ensure_search_input()
+    tmj_set_live_search_filter(TMJ, input.text or "")
+    TMJ.FUNCS.stop_search_text_input()
+    TMJ.FUNCS.refresh_search_input_display(false)
+    TMJ.FUNCS.reload()
+end
+
+local function tmj_normalize_input_text(text)
+    return (text or ""):gsub("\r", " "):gsub("\n", " ")
+end
+
+function TMJ.FUNCS.insert_search_text(text)
+    local input = TMJ.FUNCS.ensure_search_input()
+    tmj_unicode_input_insert(input, tmj_normalize_input_text(text))
+    input.composition = ""
+    TMJ.FUNCS.refresh_search_input_display(false)
+    TMJ.FUNCS.update_live_search()
+end
+
+local function tmj_ctrl_down()
+    return (G.CONTROLLER and G.CONTROLLER.held_keys and (G.CONTROLLER.held_keys.lctrl or G.CONTROLLER.held_keys.rctrl))
+        or (love and love.keyboard and love.keyboard.isDown and (love.keyboard.isDown("lctrl") or love.keyboard.isDown("rctrl")))
+end
+
+function TMJ.FUNCS.handle_search_textinput(text)
+    if not G.TMJUI or is_debugplus_console_open() then return false end
+    if not TMJ.FUNCS.is_search_input_active() then
+        if not TMJ.config.autofocus then return false end
+        TMJ.FUNCS.focus_search_input()
+    end
+    TMJ.FUNCS.insert_search_text(text)
+    return true
+end
+
+function TMJ.FUNCS.handle_search_textedited(text)
+    if not G.TMJUI or is_debugplus_console_open() then return false end
+    if not TMJ.FUNCS.is_search_input_active() then
+        if not TMJ.config.autofocus then return false end
+        TMJ.FUNCS.focus_search_input()
+    end
+    TMJ.search_input.composition = tmj_normalize_input_text(text)
+    TMJ.FUNCS.refresh_search_input_display(true)
+    TMJ.FUNCS.start_search_text_input()
+    return true
+end
+
+function TMJ.FUNCS.handle_search_keypressed(key)
+    if not G.TMJUI or is_debugplus_console_open() then return false end
+    local active = TMJ.FUNCS.is_search_input_active()
+    local action = tmj_search_key_action(key, tmj_ctrl_down())
+    if action == "paste" and (active or TMJ.config.autofocus) then
+        TMJ.FUNCS.focus_search_input()
+        local clipboard = (G.F_LOCAL_CLIPBOARD and G.CLIPBOARD or (love.system and love.system.getClipboardText and love.system.getClipboardText())) or ""
+        TMJ.FUNCS.insert_search_text(clipboard)
+        return true
+    end
+    if not active then return false end
+    if not action then return false end
+
+    if action == "backspace" then
+        tmj_unicode_input_backspace(TMJ.search_input)
+        TMJ.FUNCS.refresh_search_input_display(false)
+        TMJ.FUNCS.update_live_search()
+    elseif action == "delete" then
+        tmj_unicode_input_delete(TMJ.search_input)
+        TMJ.FUNCS.refresh_search_input_display(false)
+        TMJ.FUNCS.update_live_search()
+    elseif action == "left" then
+        tmj_unicode_input_move(TMJ.search_input, -1)
+        TMJ.FUNCS.refresh_search_input_display(true)
+    elseif action == "right" then
+        tmj_unicode_input_move(TMJ.search_input, 1)
+        TMJ.FUNCS.refresh_search_input_display(true)
+    elseif action == "submit" then
+        TMJ.FUNCS.apply_search_input()
+    elseif action == "blur" then
+        TMJ.FUNCS.blur_search_input()
+    end
+
+    return true
+end
+
+function TMJ.FUNCS.search_input_node()
+    local input = TMJ.FUNCS.ensure_search_input()
+    return {
+        n = G.UIT.C,
+        config = {
+            id = "TMJTEXTINP",
+            align = "cm",
+            padding = 0.05,
+            r = 0.1,
+            hover = true,
+            colour = input.active and darken(copy_table(G.C.RED), 0.3) or G.C.RED,
+            minw = 3,
+            minh = 1,
+            button = "SelectTMJSearchInput",
+            shadow = true
+        },
+        nodes = {
+            {
+                n = G.UIT.R,
+                config = { align = "cm", padding = 0.05, r = 0.1, colour = G.C.CLEAR },
+                nodes = {
+                    { n = G.UIT.T, config = { ref_table = input, ref_value = "display_text", scale = 0.4, colour = G.C.UI.TEXT_LIGHT, id = "TMJTEXTINP_TEXT" } }
+                }
+            }
+        }
+    }
+end
+
+G.FUNCS.SelectTMJSearchInput = function()
+    TMJ.FUNCS.focus_search_input()
+end
+
+function TMJ.FUNCS.inner_nodes()
+    local text = TMJ.FUNCS.search_input_node()
     return {
         {
             n = G.UIT.R,
             config = { minw = G.ROOM.T.w * 0.25, padding = 0.05, align = "cm" },
             nodes = {
-                { n = G.UIT.T, config = { text = "Start typing to focus searchbar...", colour = G.C.WHITE, scale = 0.35 } },
+                { n = G.UIT.T, config = { text = localize("tmj_focus_searchbar"), colour = G.C.WHITE, scale = 0.35 } },
             }
         },
         { n = G.UIT.R, config = { align = "cm", r = 0.01, colour = G.C.BLACK, emboss = 0.05 }, nodes = { { n = G.UIT.C, nodes = TMJ.FUNCS.make_card_areas() } } }, --cardareas
@@ -54,7 +265,7 @@ function TMJ.FUNCS.inner_nodes()
                 UIBox_button({
                     colour = G.C.RED,
                     button = "CloseTMJ",
-                    label = { "Close" },
+                    label = { localize("tmj_close") },
                     minw = 3,
                     focus_args = { snap_to = true },
                 }),
@@ -64,14 +275,14 @@ function TMJ.FUNCS.inner_nodes()
             n = G.UIT.R,
             config = { minw = G.ROOM.T.w * 0.25, padding = 0.05, align = "cm" },
             nodes = {
-                { n = G.UIT.T, config = { text = "Type keywords, separated by commas", colour = G.C.WHITE, scale = 0.35 } },
+                { n = G.UIT.T, config = { text = localize("tmj_search_hint"), colour = G.C.WHITE, scale = 0.35 } },
             }
         },
         {
             n = G.UIT.R,
             config = { minw = G.ROOM.T.w * 0.25, padding = 0.05, align = "cm" },
             nodes = {
-                { n = G.UIT.T, config = { text = "Ctrl+click to pin a card", colour = G.C.WHITE, scale = 0.35 } },
+                { n = G.UIT.T, config = { text = localize("tmj_pin_hint"), colour = G.C.WHITE, scale = 0.35 } },
             }
         },
     }
@@ -169,9 +380,13 @@ function TMJ.FUNCS.reload()
         G.TMJUI:remove()
         G.TMJTAGS:remove()
     end
+    local input = TMJ.FUNCS.ensure_search_input()
     G.TMJUI = TMJ.FUNCS.ui_box()
     TMJ.FUNCS.make_cards()
     G.TMJUI:recalculate()
+    if input.active then
+        TMJ.FUNCS.start_search_text_input()
+    end
     TMJ.FUNCS.make_tag_stuff()
 end
 
@@ -315,7 +530,7 @@ function TMJ.FUNCS.buildModtag(mod)
             G.FUNCS["openModUI_" .. mod.id](self)
         else
             TMJ.thegreatfilter = "%%%%"..mod.name
-            G.ENTERED_FILTER = ""
+            TMJ.FUNCS.clear_search_input(false)
             TMJ.scrolled_amount = 0
             TMJ.FUNCS.reload()
         end
