@@ -106,6 +106,9 @@ function love.update(dt)
             end
         end
     end
+    if TMJ.FUNCS.update_search_backspace_repeat then
+        TMJ.FUNCS.update_search_backspace_repeat()
+    end
 end
 local old = love.keypressed
 local wanted_chars = table_into_hashset(collect(string.gmatch("abcdefghijklmnopqrstuvwxyz[]!", ".")))
@@ -116,7 +119,7 @@ local function tmj_ctrl_down()
         or (love and love.keyboard and love.keyboard.isDown and (love.keyboard.isDown("lctrl") or love.keyboard.isDown("rctrl")))
 end
 
-function love.keypressed(key, ...)
+function love.keypressed(key, scancode, isrepeat, ...)
     if key == "escape" and G.TMJUI and TMJ.config.close_on_esc then
         G.FUNCS.CloseTMJ()
         return
@@ -177,19 +180,27 @@ function love.keypressed(key, ...)
         G.FUNCS.CloseTMJ()
         return
     end
-    if TMJ.FUNCS.handle_search_keypressed and TMJ.FUNCS.handle_search_keypressed(key) then
+    if TMJ.FUNCS.handle_search_keypressed and TMJ.FUNCS.handle_search_keypressed(key, isrepeat) then
         return
     end
     for _, char in pairs(unwanted_chars) do
         if G.CONTROLLER.held_keys[char] then
-            return old(key, ...)
+            return old(key, scancode, isrepeat, ...)
         end
     end
     if G.TMJUI and wanted_chars[key] and TMJ.config.autofocus and TMJ.FUNCS.focus_search_input then
         TMJ.FUNCS.focus_search_input()
         return
     end
-    old(key, ...)
+    old(key, scancode, isrepeat, ...)
+end
+
+local old_mousepressed = love.mousepressed or function() end
+function love.mousepressed(x, y, button, ...)
+    if TMJ.FUNCS.handle_search_mousepressed and TMJ.FUNCS.handle_search_mousepressed(x, y, button) then
+        return
+    end
+    return old_mousepressed(x, y, button, ...)
 end
 
 local old_textinput = love.textinput or function() end
@@ -208,11 +219,14 @@ function love.textedited(text, start, length)
     return old_textedited(text, start, length)
 end
 
-local oldrelease = love.keyreleased
+local oldrelease = love.keyreleased or function() end
 function love.keyreleased(key)
     oldrelease(key)
     if key == "up" or key == "down" then
         TMJ.held_arrow = nil
+    end
+    if key == "backspace" and TMJ.FUNCS.stop_search_backspace_repeat then
+        TMJ.FUNCS.stop_search_backspace_repeat()
     end
 end
 

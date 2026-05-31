@@ -11,6 +11,9 @@ end
 G.ENTERED_FILTER = ""
 TMJ.thegreatfilter = ""
 
+local TMJ_BACKSPACE_REPEAT_DELAY = 0.3
+local TMJ_BACKSPACE_REPEAT_INTERVAL = 0.05
+
 local function tmj_search_display_text(input)
     local chars = tmj_utf8_chars(input.text or "")
     local cursor = math.clamp(input.cursor or #chars, 0, #chars)
@@ -78,6 +81,9 @@ function TMJ.FUNCS.start_search_text_input()
 end
 
 function TMJ.FUNCS.stop_search_text_input()
+    if TMJ.FUNCS.stop_search_backspace_repeat then
+        TMJ.FUNCS.stop_search_backspace_repeat()
+    end
     if love and love.keyboard and love.keyboard.setTextInput and TMJ.search_text_input_started then
         love.keyboard.setTextInput(TMJ.prev_love_text_input or false)
     end
@@ -145,6 +151,59 @@ function TMJ.FUNCS.insert_search_text(text)
     TMJ.FUNCS.update_live_search()
 end
 
+function TMJ.FUNCS.backspace_search_input(count)
+    local input = TMJ.FUNCS.ensure_search_input()
+    for _ = 1, count or 1 do
+        tmj_unicode_input_backspace(input)
+    end
+    input.composition = ""
+    TMJ.FUNCS.refresh_search_input_display(false)
+    TMJ.FUNCS.update_live_search()
+end
+
+local function tmj_now()
+    return love and love.timer and love.timer.getTime and love.timer.getTime() or 0
+end
+
+function TMJ.FUNCS.start_search_backspace_repeat()
+    TMJ.search_backspace_repeat = TMJ.search_backspace_repeat or {}
+    tmj_held_key_repeat_count(
+        TMJ.search_backspace_repeat,
+        true,
+        tmj_now(),
+        TMJ_BACKSPACE_REPEAT_DELAY,
+        TMJ_BACKSPACE_REPEAT_INTERVAL
+    )
+end
+
+function TMJ.FUNCS.stop_search_backspace_repeat()
+    if not TMJ.search_backspace_repeat then return end
+    tmj_held_key_repeat_count(
+        TMJ.search_backspace_repeat,
+        false,
+        tmj_now(),
+        TMJ_BACKSPACE_REPEAT_DELAY,
+        TMJ_BACKSPACE_REPEAT_INTERVAL
+    )
+end
+
+function TMJ.FUNCS.update_search_backspace_repeat()
+    if not TMJ.FUNCS.is_search_input_active() or not TMJ.search_backspace_repeat or not TMJ.search_backspace_repeat.active then
+        return
+    end
+    local held = love and love.keyboard and love.keyboard.isDown and love.keyboard.isDown("backspace")
+    local count = tmj_held_key_repeat_count(
+        TMJ.search_backspace_repeat,
+        held,
+        tmj_now(),
+        TMJ_BACKSPACE_REPEAT_DELAY,
+        TMJ_BACKSPACE_REPEAT_INTERVAL
+    )
+    if count > 0 then
+        TMJ.FUNCS.backspace_search_input(count)
+    end
+end
+
 local function tmj_ctrl_down()
     return (G.CONTROLLER and G.CONTROLLER.held_keys and (G.CONTROLLER.held_keys.lctrl or G.CONTROLLER.held_keys.rctrl))
         or (love and love.keyboard and love.keyboard.isDown and (love.keyboard.isDown("lctrl") or love.keyboard.isDown("rctrl")))
@@ -172,7 +231,7 @@ function TMJ.FUNCS.handle_search_textedited(text)
     return true
 end
 
-function TMJ.FUNCS.handle_search_keypressed(key)
+function TMJ.FUNCS.handle_search_keypressed(key, isrepeat)
     if not G.TMJUI or is_debugplus_console_open() then return false end
     local active = TMJ.FUNCS.is_search_input_active()
     local action = tmj_search_key_action(key, tmj_ctrl_down())
@@ -186,9 +245,10 @@ function TMJ.FUNCS.handle_search_keypressed(key)
     if not action then return false end
 
     if action == "backspace" then
-        tmj_unicode_input_backspace(TMJ.search_input)
-        TMJ.FUNCS.refresh_search_input_display(false)
-        TMJ.FUNCS.update_live_search()
+        if not isrepeat then
+            TMJ.FUNCS.backspace_search_input(1)
+            TMJ.FUNCS.start_search_backspace_repeat()
+        end
     elseif action == "delete" then
         tmj_unicode_input_delete(TMJ.search_input)
         TMJ.FUNCS.refresh_search_input_display(false)
@@ -205,6 +265,21 @@ function TMJ.FUNCS.handle_search_keypressed(key)
         TMJ.FUNCS.blur_search_input()
     end
 
+    return true
+end
+
+function TMJ.FUNCS.search_input_contains_point(x, y)
+    local node = G.TMJUI and G.TMJUI.get_UIE_by_ID and G.TMJUI:get_UIE_by_ID("TMJTEXTINP")
+    local rx, ry, rw, rh = tmj_text_input_rect_from_node(node, G.ROOM, G.TILESIZE, G.TILESCALE)
+    return tmj_point_in_rect(x, y, rx, ry, rw, rh)
+end
+
+function TMJ.FUNCS.handle_search_mousepressed(x, y, button)
+    if not G.TMJUI or is_debugplus_console_open() or button ~= 2 then return false end
+    if not TMJ.FUNCS.search_input_contains_point(x, y) then return false end
+    TMJ.FUNCS.focus_search_input()
+    TMJ.FUNCS.clear_search_input(true)
+    TMJ.FUNCS.update_live_search()
     return true
 end
 

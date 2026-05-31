@@ -171,6 +171,41 @@ function tmj_search_key_action(key, ctrl_down)
     })[key]
 end
 
+function tmj_held_key_repeat_count(state, held, now, initial_delay, interval)
+    state = state or {}
+    now = now or 0
+    initial_delay = initial_delay or 0.35
+    interval = interval or 0.06
+
+    if not held then
+        state.active = false
+        state.next_time = nil
+        return 0
+    end
+
+    if not state.active then
+        state.active = true
+        state.next_time = now + initial_delay
+        return 0
+    end
+
+    local count = 0
+    while state.next_time and now + 0.000001 >= state.next_time do
+        count = count + 1
+        state.next_time = state.next_time + interval
+        if count >= 20 then
+            state.next_time = now + interval
+            break
+        end
+    end
+    return count
+end
+
+function tmj_point_in_rect(x, y, rx, ry, rw, rh)
+    if not (x and y and rx and ry and rw and rh) then return false end
+    return x >= rx and y >= ry and x <= rx + rw and y <= ry + rh
+end
+
 function tmj_text_input_rect_from_node(node, room, tile_size, tile_scale)
     local t = node and (node.VT or node.T)
     if not t or not tile_size or not tile_scale then return nil end
@@ -431,6 +466,23 @@ function utils_unit_tests()
     assert(tmj_search_key_action("rshift", false) == nil)
     assert(tmj_search_key_action("lalt", false) == nil)
     assert(tmj_search_key_action("ralt", false) == nil)
+
+    local repeat_state = {}
+    assert(tmj_held_key_repeat_count(repeat_state, true, 1, 0.3, 0.05) == 0)
+    assert(repeat_state.active == true)
+    assert(repeat_state.next_time == 1.3)
+    assert(tmj_held_key_repeat_count(repeat_state, true, 1.29, 0.3, 0.05) == 0)
+    assert(tmj_held_key_repeat_count(repeat_state, true, 1.3, 0.3, 0.05) == 1)
+    assert(repeat_state.next_time == 1.35)
+    assert(tmj_held_key_repeat_count(repeat_state, true, 1.45, 0.3, 0.05) == 3)
+    assert(tmj_held_key_repeat_count(repeat_state, false, 1.46, 0.3, 0.05) == 0)
+    assert(repeat_state.active == false)
+    assert(repeat_state.next_time == nil)
+
+    assert(tmj_point_in_rect(10, 10, 10, 10, 20, 20) == true)
+    assert(tmj_point_in_rect(30, 30, 10, 10, 20, 20) == true)
+    assert(tmj_point_in_rect(9, 10, 10, 10, 20, 20) == false)
+    assert(tmj_point_in_rect(10, 31, 10, 10, 20, 20) == false)
 
     local ime_hints = tmj_native_ime_hint_pairs()
     assert(ime_hints[1][1] == "SDL_IME_SHOW_UI")
