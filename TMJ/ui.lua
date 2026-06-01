@@ -60,11 +60,6 @@ function TMJ.FUNCS.start_search_text_input()
         if not TMJ.search_text_input_started then
             TMJ.prev_love_text_input = love.keyboard.hasTextInput and love.keyboard.hasTextInput() or false
         end
-        local native_ime_enabled = tmj_enable_native_ime_ui()
-        if native_ime_enabled and not TMJ.native_ime_ui_text_input_restarted and love.keyboard.hasTextInput and love.keyboard.hasTextInput() then
-            love.keyboard.setTextInput(false)
-            TMJ.native_ime_ui_text_input_restarted = true
-        end
         local node = G.TMJUI and G.TMJUI.get_UIE_by_ID and G.TMJUI:get_UIE_by_ID("TMJTEXTINP")
         local x, y, w, h = tmj_text_input_rect_from_node(node, G.ROOM, G.TILESIZE, G.TILESCALE)
         local window_w, window_h
@@ -76,7 +71,6 @@ function TMJ.FUNCS.start_search_text_input()
         x, y, w, h = tmj_clamp_text_input_rect(x, y, w or 360, h or 40, window_w, window_h)
         love.keyboard.setTextInput(true, x, y, w, h)
         TMJ.search_text_input_started = true
-        tmj_set_native_ime_rect(x, y, w, h)
     end
 end
 

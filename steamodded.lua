@@ -56,6 +56,34 @@ for i, v in ipairs(scripts) do
     end
 end
 
+function _G.tmj_cleanup_restart_text_input()
+    if love and love.keyboard and love.keyboard.setTextInput then pcall(love.keyboard.setTextInput, false) end
+    if tmj_stop_sdl_text_input then pcall(tmj_stop_sdl_text_input) end
+end
+TMJ.cleanup_restart_text_input = _G.tmj_cleanup_restart_text_input
+
+if love and love.event and love.event.quit and love.event.quit ~= _G.tmj_love_event_quit_wrapper then
+    local quit_ref = love.event.quit
+    _G.tmj_love_event_quit_wrapper = function(code, ...)
+        if code == "restart" then
+            _G.tmj_cleanup_restart_text_input()
+        end
+        return quit_ref(code, ...)
+    end
+    TMJ.love_event_quit_wrapper = _G.tmj_love_event_quit_wrapper
+    love.event.quit = _G.tmj_love_event_quit_wrapper
+end
+
+if SMODS and SMODS.restart_game and SMODS.restart_game ~= _G.tmj_smods_restart_game_wrapper then
+    local restart_ref = SMODS.restart_game
+    _G.tmj_smods_restart_game_wrapper = function(...)
+        _G.tmj_cleanup_restart_text_input()
+        return restart_ref(...)
+    end
+    TMJ.smods_restart_game_wrapper = _G.tmj_smods_restart_game_wrapper
+    SMODS.restart_game = _G.tmj_smods_restart_game_wrapper
+end
+
 
 
 G.FUNCS.CloseTMJ = function()
@@ -110,6 +138,7 @@ function love.update(dt)
         TMJ.FUNCS.update_search_backspace_repeat()
     end
 end
+
 local old = love.keypressed
 local wanted_chars = table_into_hashset(collect(string.gmatch("abcdefghijklmnopqrstuvwxyz[]!", ".")))
 wanted_chars["return"] = true

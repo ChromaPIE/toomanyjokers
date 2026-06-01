@@ -233,170 +233,25 @@ function tmj_clamp_text_input_rect(x, y, w, h, window_w, window_h)
     return x, y, w, h
 end
 
-function tmj_native_ime_hint_pairs()
-    return {
-        { "SDL_IME_SHOW_UI", "1" },
-    }
-end
-
-local function tmj_record_native_ime_status(ok, status)
-    local mod = rawget(_G, "TMJ")
-    if mod then
-        mod.native_ime_ui_hint_ok = ok
-        mod.native_ime_ui_hint_status = status
-    end
-    return ok
-end
-
-local function tmj_sdl_candidates()
+function tmj_stop_sdl_text_input()
     local ok, ffi = pcall(require, "ffi")
-    if not ok or not ffi then return nil, "ffi unavailable" end
+    if not ok or not ffi then return false end
 
     pcall(function()
-        ffi.cdef[[
-            typedef struct SDL_Rect { int x, y; int w, h; } SDL_Rect;
-            int SDL_SetHint(const char *name, const char *value);
-            int SDL_SetHintWithPriority(const char *name, const char *value, int priority);
-            void SDL_SetTextInputRect(SDL_Rect *rect);
-            void SDL_StartTextInput(void);
-            void *GetModuleHandleA(const char *lpModuleName);
-            void *GetProcAddress(void *hModule, const char *lpProcName);
-        ]]
+        ffi.cdef[[void SDL_StopTextInput(void);]]
     end)
 
-    local libs = {
-        { name = "ffi.C", lib = ffi.C },
-    }
-
-    if ffi.os == "Windows" then
-        local loaded_kernel, kernel32 = pcall(ffi.load, "kernel32")
-        if loaded_kernel and kernel32 then
-            local function ptr_ok(ptr)
-                return ptr ~= nil and tonumber(ffi.cast("uintptr_t", ptr)) ~= 0
-            end
-            for _, dll_name in ipairs({ "SDL2.dll", "SDL3.dll" }) do
-                local got_module, module = pcall(kernel32.GetModuleHandleA, dll_name)
-                if got_module and ptr_ok(module) then
-                    libs[#libs + 1] = {
-                        name = "loaded " .. dll_name,
-                        set_hint = function(name, value)
-                            local proc = kernel32.GetProcAddress(module, "SDL_SetHintWithPriority")
-                            if ptr_ok(proc) then
-                                local func = ffi.cast("int (__cdecl *)(const char *, const char *, int)", proc)
-                                return func(name, value, 2) ~= 0
-                            end
-                            proc = kernel32.GetProcAddress(module, "SDL_SetHint")
-                            if ptr_ok(proc) then
-                                local func = ffi.cast("int (__cdecl *)(const char *, const char *)", proc)
-                                return func(name, value) ~= 0
-                            end
-                            return false
-                        end,
-                        set_rect = function(rect)
-                            local proc = kernel32.GetProcAddress(module, "SDL_SetTextInputRect")
-                            if not ptr_ok(proc) then return false end
-                            local func = ffi.cast("void (__cdecl *)(SDL_Rect *)", proc)
-                            func(rect)
-                            return true
-                        end,
-                        start_text_input = function()
-                            local proc = kernel32.GetProcAddress(module, "SDL_StartTextInput")
-                            if not ptr_ok(proc) then return false end
-                            local func = ffi.cast("void (__cdecl *)(void)", proc)
-                            func()
-                            return true
-                        end,
-                    }
-                end
-            end
-        end
+    local function stop(lib)
+        local ok_fn, fn = pcall(function() return lib and lib.SDL_StopTextInput end)
+        return ok_fn and fn and pcall(fn)
     end
 
-    for _, lib_name in ipairs({ "SDL2", "SDL2.dll", "SDL3", "SDL3.dll" }) do
+    if stop(ffi.C) then return true end
+    for _, lib_name in ipairs({ "SDL2", "SDL2.dll" }) do
         local loaded, lib = pcall(ffi.load, lib_name)
-        if loaded and lib then
-            libs[#libs + 1] = { name = lib_name, lib = lib }
-        end
+        if loaded and stop(lib) then return true end
     end
-
-    return libs, nil, ffi
-end
-
-local function tmj_try_set_sdl_hint(candidate, name, value)
-    if candidate.set_hint then
-        local ok, result = pcall(candidate.set_hint, name, value)
-        return ok and result
-    end
-
-    local lib = candidate.lib
-    local ok, result = pcall(function()
-        return lib.SDL_SetHintWithPriority(name, value, 2)
-    end)
-    if ok then return result ~= 0 end
-
-    ok, result = pcall(function()
-        return lib.SDL_SetHint(name, value)
-    end)
-    return ok and result ~= 0
-end
-
-function tmj_enable_native_ime_ui()
-    local mod = rawget(_G, "TMJ")
-    if mod and mod.native_ime_ui_hint_attempted then
-        return mod.native_ime_ui_hint_ok
-    end
-    if mod then mod.native_ime_ui_hint_attempted = true end
-
-    local libs, err = tmj_sdl_candidates()
-    if not libs then
-        return tmj_record_native_ime_status(false, err or "SDL unavailable")
-    end
-
-    for _, candidate in ipairs(libs) do
-        local all_set = true
-        for _, hint in ipairs(tmj_native_ime_hint_pairs()) do
-            if not tmj_try_set_sdl_hint(candidate, hint[1], hint[2]) then
-                all_set = false
-                break
-            end
-        end
-        if all_set then
-            return tmj_record_native_ime_status(true, "enabled through " .. candidate.name)
-        end
-    end
-
-    return tmj_record_native_ime_status(false, "SDL hint unavailable")
-end
-
-function tmj_set_native_ime_rect(x, y, w, h)
-    local libs, err, ffi = tmj_sdl_candidates()
-    if not libs then return false, err or "SDL unavailable" end
-    local rect = ffi.new("SDL_Rect")
-    rect.x, rect.y, rect.w, rect.h = x, y, w, h
-
-    for _, candidate in ipairs(libs) do
-        local ok, result
-        if candidate.set_rect then
-            ok, result = pcall(candidate.set_rect, rect)
-            ok = ok and result
-        else
-            ok = pcall(function()
-                candidate.lib.SDL_SetTextInputRect(rect)
-            end)
-        end
-        if ok then
-            pcall(function()
-                if candidate.start_text_input then
-                    candidate.start_text_input()
-                else
-                    candidate.lib.SDL_StartTextInput()
-                end
-            end)
-            return true, candidate.name
-        end
-    end
-
-    return false, "SDL_SetTextInputRect unavailable"
+    return false
 end
 
 function utils_unit_tests()
@@ -483,10 +338,6 @@ function utils_unit_tests()
     assert(tmj_point_in_rect(30, 30, 10, 10, 20, 20) == true)
     assert(tmj_point_in_rect(9, 10, 10, 10, 20, 20) == false)
     assert(tmj_point_in_rect(10, 31, 10, 10, 20, 20) == false)
-
-    local ime_hints = tmj_native_ime_hint_pairs()
-    assert(ime_hints[1][1] == "SDL_IME_SHOW_UI")
-    assert(ime_hints[1][2] == "1")
 
     local node = { VT = { x = 2, y = 3, w = 4, h = 1 } }
     local room = { T = { x = 0.5, y = 1 } }
